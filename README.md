@@ -21,6 +21,15 @@ dsh plugin --profile web add git+https://github.com/ETQWFD/eo-dsh-plugin.git
 
 **不要写成大写的 `GITHUB:`**。pnpm 11 会把它当成 scp 风格地址，解析成 `https://github.com/eo-dsh-plugin/.git/`，报 `Repository not found`。
 
+已经装过旧版、要升级到 0.3.1 的图片修复版：
+
+```bash
+dsh plugin --profile web remove dsh-eo-assistant
+dsh plugin --profile web add github:ETQWFD/eo-dsh-plugin
+```
+
+只重复 `add` 不一定会重新拉取 GitHub 最新提交；先 remove 再 add 最稳妥。升级后重启 DSH。
+
 重启 DSH，打开：
 
 ```
