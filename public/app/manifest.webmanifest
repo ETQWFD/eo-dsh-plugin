@@ -1,0 +1,19 @@
+{
+  "name": "EO助手",
+  "short_name": "EO助手",
+  "description": "连接电脑版 DeepSeek Harness EO助手插件",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f6f5",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -93,7 +93,8 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
     ok: true,
     token: state.token,
     assistantName: state.settings.assistantName,
-    relayUrl: config.relayUrl,
+    relayUrl: state.relayUrl || config.relayUrl,
+    relayKind: state.relayKind || (config.relayUrl ? 'external' : 'embedded'),
     connected: state.connected,
     relayError: state.relayError,
     deviceId: identity.deviceId,
@@ -129,8 +130,9 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
     if (!methodIs(req, 'POST')) return sendEmpty(res, 405)
     if (!sameOrigin(req)) return sendJson(res, 403, { error: 'origin rejected' })
     if (!tokenMatches(req, state.token)) return sendJson(res, 403, { error: 'token rejected' })
-    if (!config.relayUrl) return sendJson(res, 400, { error: '请先在插件配置中填写 relayUrl' })
+    if (!config.relayUrl && !state.relayUrl) return sendJson(res, 400, { error: 'relay 尚未就绪' })
     try {
+      await state.relayReady
       if (state.bind && state.bind.status === 'waiting' && state.bind.expiresAt > Date.now()) {
         return sendJson(res, 200, { ok: true, bind: snapshot().bind })
       }

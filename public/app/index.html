@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="color-scheme" content="light" />
+    <title>EO助手</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" />
+    <link rel="stylesheet" href="style.css?v=0.2.0" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="settingsBtn" class="iconbtn" aria-label="设置">设置</button>
+      <div class="brand">
+        <span class="brandmark">EO</span>
+        <span>EO助手</span>
+      </div>
+      <button id="scanBtn" class="scanbtn" aria-label="扫一扫">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M9 9h2v2H9zM13 9h2v2h-2zM9 13h2v2H9zM13 13h2v2h-2z" fill="currentColor"/>
+        </svg>
+        扫一扫
+      </button>
+    </header>
+
+    <main id="main">
+      <section id="listView" class="listview" aria-live="polite"></section>
+
+      <section id="chatView" class="chatview" hidden>
+        <div class="chathead">
+          <button id="backBtn" class="backbtn" aria-label="返回">‹</button>
+          <div class="chatidentity">
+            <div class="chatavatar" id="chatAvatar">E</div>
+            <div>
+              <div class="chatname" id="chatName">EO助手</div>
+              <div class="chatstatus" id="chatStatus"><span class="dot"></span><span>离线</span></div>
+            </div>
+          </div>
+          <div class="chatheadspacer"></div>
+        </div>
+        <div id="messages" class="messages"></div>
+        <div class="composer">
+          <button id="attachBtn" class="attachbtn" aria-label="发送文件">＋</button>
+          <input id="fileInput" type="file" hidden />
+          <button id="imageBtn" class="attachbtn imagebtn" aria-label="发送图片">图</button>
+          <input id="imageInput" type="file" accept="image/*" hidden />
+          <input id="textInput" autocomplete="off" enterkeyhint="send" placeholder="发消息…" />
+          <button id="voiceBtn" class="voicebtn" aria-label="录制语音">语音</button>
+          <button id="sendBtn" class="sendbtn" aria-label="发送">发送</button>
+        </div>
+        <div class="stagehint" id="stageHint">文本、图片、文件、语音与 PPT 均走端到端加密；图片会被压缩后作为视觉输入，附件限 16MB。</div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <div id="imageViewer" class="imageviewer" hidden>
+      <div class="imageviewerbar">
+        <span id="imageViewerName">图片</span>
+        <button id="imageViewerClose" class="iconbtn" aria-label="关闭">关闭</button>
+      </div>
+      <img id="imageViewerImg" alt="图片预览" />
+    </div>
+
+    <div id="scanModal" class="modal" hidden>
+      <div class="sheet">
+        <div class="sheethead">
+          <div>
+            <div class="sheettitle">扫一扫</div>
+            <div class="sheetdesc">扫描电脑版「EO助手连接」里的二维码</div>
+          </div>
+          <button id="scanClose" class="iconbtn" aria-label="关闭">关闭</button>
+        </div>
+        <div class="videowrap">
+          <video id="scanVideo" playsinline muted></video>
+          <div class="scanguard"></div>
+        </div>
+        <canvas id="scanCanvas" hidden></canvas>
+        <div id="scanError" class="scanerror" hidden></div>
+        <div class="pastebox">
+          <input id="bindLink" placeholder="无法使用相机？粘贴 eo://bind?… 链接" />
+          <button id="bindLinkBtn" class="primarybtn">打开</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="codeModal" class="modal" hidden>
+      <div class="sheet small">
+        <div class="sheethead">
+          <div>
+            <div class="sheettitle">输入确认码</div>
+            <div class="sheetdesc">电脑版设置页会显示 6 位确认码，输入后完成绑定</div>
+          </div>
+          <button id="codeClose" class="iconbtn" aria-label="取消">取消</button>
+        </div>
+        <input id="codeInput" class="codeinput" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
+        <div id="codeError" class="errorline" hidden></div>
+        <button id="codeBtn" class="primarybtn wide">确认绑定</button>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal" hidden>
+      <div class="sheet">
+        <div class="sheethead">
+          <div>
+            <div class="sheettitle">设置</div>
+            <div class="sheetdesc">匿名设备身份与加密连接；无需填写 relay 地址</div>
+          </div>
+          <button id="settingsClose" class="iconbtn" aria-label="关闭">关闭</button>
+        </div>
+        <div class="kv">
+          <div><span>Relay</span><code id="relayValue">自动</code></div>
+          <div><span>设备 ID</span><code id="deviceId">—</code></div>
+          <div><span>连接状态</span><span id="linkState">未连接</span></div>
+        </div>
+        <button id="openBindHelp" class="primarybtn wide">扫码添加一台电脑</button>
+        <div class="notice">
+          设备私钥只保存在本机：Android 使用 Keystore 加密，浏览器使用 localStorage。relay 只转发 AES-GCM 密文，看不到消息内容；图片会作为视觉输入送入电脑上的 DSH 模型。
+        </div>
+        <button id="resetBtn" class="dangerbtn wide">清除本机身份与全部对话</button>
+      </div>
+    </div>
+
+    <template id="emptyTpl">
+      <div class="empty">
+        <div class="emptyart">EO</div>
+        <h1>连接你的电脑</h1>
+        <p>在电脑版 DeepSeek Harness 设置里打开「EO助手连接」，点“生成二维码”，然后用右上角扫一扫。</p>
+        <button class="primarybtn" data-action="scan">扫一扫连接</button>
+      </div>
+    </template>
+
+    <script type="module" src="app.js?v=0.2.0"></script>
+  </body>
+</html>

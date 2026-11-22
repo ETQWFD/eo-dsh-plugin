@@ -27,6 +27,8 @@ export class SessionBridge {
       sessions: this.ctx.get('sessions'),
       agents: this.ctx.get('agents'),
       defaultModel: this.ctx.get('agentDefaultModel'),
+      attachments: this.ctx.get('attachments'),
+      llm: this.ctx.get('llm'),
     }
   }
 
@@ -45,6 +47,57 @@ export class SessionBridge {
       // fall through to the diagnostic below
     }
     return null
+  }
+
+  /** Match the incoming attachment to the media types DSH can actually store. */
+  imageMime(meta) {
+    const declared = String(meta?.mime || '').toLowerCase()
+    if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(declared)) return declared
+    const name = String(meta?.name || '').toLowerCase()
+    if (name.endsWith('.png')) return 'image/png'
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg'
+    if (name.endsWith('.webp')) return 'image/webp'
+    if (name.endsWith('.gif')) return 'image/gif'
+    return ''
+  }
+
+  async imageAdmission(meta, bytes) {
+    if (!bytes?.length) return { block: null, reason: '图片下载失败' }
+    const mime = this.imageMime(meta)
+    if (!mime) return { block: null, reason: `图片格式 ${meta?.mime || '未知'} 暂不支持` }
+    const selection = this.modelSelection()
+    const { attachments, llm } = this.services()
+    if (!attachments?.admitPromptContent) {
+      return { block: null, reason: '当前 DSH profile 没有附件服务，无法把图片送入模型' }
+    }
+    if (llm?.resolveModelInfo && selection) {
+      try {
+        const info = await llm.resolveModelInfo(selection.provider, selection.model)
+        if (Array.isArray(info?.inputModalities) && !info.inputModalities.includes('image')) {
+          return {
+            block: null,
+            reason: `当前模型 ${selection.model} 未声明图片输入，请切换到 deepseek-flash 等视觉模型`,
+          }
+        }
+      } catch (error) {
+        // Model lookup is advisory here; admission below is the real gate.
+        this.log(`[eo] image model lookup failed: ${error.message}`)
+      }
+    }
+    try {
+      const admitted = await attachments.admitPromptContent([{
+        type: 'image',
+        mediaType: mime,
+        data: bytes.toString('base64'),
+        name: String(meta?.name || 'image').slice(0, 128),
+      }])
+      const block = admitted.find((part) => part?.type === 'image')
+      if (!block) return { block: null, reason: '附件服务没有返回图片引用' }
+      return { block, reason: '' }
+    } catch (error) {
+      this.log(`[eo] image admission failed: ${error.message}`)
+      return { block: null, reason: `图片准入失败：${error.message}` }
+    }
   }
 
   async ensure(conv) {
@@ -133,10 +186,12 @@ export class SessionBridge {
     let meta = payload.meta && typeof payload.meta === 'object' ? { ...payload.meta } : null
     let attachmentPath = ''
     let attachmentError = ''
+    let attachmentBytes = null
     if (meta?.blobId) {
       try {
         if (typeof this.downloadAttachment !== 'function') throw new Error('attachment transport unavailable')
         const bytes = await this.downloadAttachment(conv, meta)
+        attachmentBytes = bytes
         attachmentPath = this.store.saveAttachment(
           conv.convId,
           payload.msgId,
@@ -151,17 +206,29 @@ export class SessionBridge {
       }
     }
 
-    const label = payload.kind === 'voice' ? '语音' : payload.kind === 'ppt' ? 'PPT' : '文件'
+    const isImage = payload.kind === 'image' || meta?.type === 'image'
+    const label = payload.kind === 'voice' ? '语音'
+      : payload.kind === 'ppt' ? 'PPT'
+        : isImage ? '图片' : '文件'
     let text = payload.text || ''
+    let image = { block: null, reason: '' }
     if (meta?.blobId) {
       const size = Number(meta.size || meta.bytes || 0)
       const sizeText = size > 0 ? `，${(size / 1024).toFixed(1)}KB` : ''
       const place = attachmentPath
         ? `已保存到 ${attachmentPath}`
         : `未能下载（${attachmentError || '未知错误'}），blobId=${meta.blobId}`
+      if (isImage && attachmentBytes?.length) {
+        image = await this.imageAdmission(meta, attachmentBytes)
+      }
+      const vision = isImage && image.block
+        ? '；已作为视觉输入发送给模型'
+        : isImage && image.reason
+          ? `；未作为视觉输入：${image.reason}`
+          : ''
       text = [
         text,
-        `[${label}] ${meta.name || '未命名'}${sizeText}；${place}`,
+        `[${label}] ${meta.name || '未命名'}${sizeText}；${place}${vision}`,
       ].filter(Boolean).join('\n')
     }
 
@@ -182,7 +249,9 @@ export class SessionBridge {
     const entry = await this.ensure(conv)
     if (!entry) return
 
-    const content = [{ type: 'text', text }]
+    const content = image.block
+      ? [{ type: 'text', text }, image.block]
+      : [{ type: 'text', text }]
     if (entry.handle?.agent?.followup) {
       try {
         entry.handle.agent.followup({ content, source: { kind: 'eo' } })

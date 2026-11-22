@@ -174,6 +174,7 @@ export function EoConnectSection() {
 
   const statusRow = h('div', { style: { marginBottom: 12 } }, [
     badge(data.connected ? 'relay 在线' : 'relay 离线', data.connected ? 'ok' : 'bad'),
+    badge(data.relayKind === 'embedded' ? '内置 relay' : '外部 relay', 'neutral'),
     badge(conversationLength ? `${conversationLength} 个助手` : '未绑定', conversationLength ? 'ok' : 'neutral'),
     h('span', { style: { color: C.muted, fontSize: 12, fontFamily: C.mono } }, data.deviceId),
   ])
@@ -244,12 +245,15 @@ export function EoConnectSection() {
 
   let bindBody
   if (!data.relayUrl) {
-    bindBody = h('div', { style: { color: C.danger, lineHeight: 1.7 } },
-      '尚未配置 relayUrl。请在此插件条目的配置中填写自建 relay 地址，例如 https://eo.example.com，然后重载插件。')
+    bindBody = h('div', { style: { color: C.muted, lineHeight: 1.7 } }, [
+      h('div', { style: { color: data.relayError ? C.danger : C.muted, marginBottom: 10 } },
+        data.relayError || '正在启动内置 relay…稍等几秒后刷新。'),
+      button('重试', () => post('/bind/new'), { disabled: busy }),
+    ])
   } else if (!bind) {
     bindBody = h('div', null, [
       h('div', { style: { color: C.muted, marginBottom: 10, lineHeight: 1.7 } },
-        '点击生成二维码，用手机 EO助手 右上角“扫一扫”绑定这台电脑。二维码 120 秒内有效。'),
+        '点击生成二维码，用手机 EO助手 右上角“扫一扫”绑定这台电脑。手机和电脑在同一 Wi-Fi 下即可，无需填写 relay 地址；二维码 120 秒内有效。'),
       button(busy ? '生成中…' : '生成二维码', () => post('/bind/new'), { primary: true, disabled: busy }),
     ])
   } else if (bind.status === 'confirmed') {
@@ -316,7 +320,8 @@ export function EoConnectSection() {
   const diagnostics = h('details', { style: { marginTop: 4, color: C.muted, fontSize: 12 } }, [
     h('summary', { style: { cursor: 'pointer' } }, '诊断信息'),
     h('div', { style: { marginTop: 8, fontFamily: C.mono, lineHeight: 1.7, wordBreak: 'break-all' } }, [
-      h('div', null, `relay: ${data.relayUrl || '(未配置)'}`),
+      h('div', null, `relay: ${data.relayUrl || '(启动中)'}`),
+      h('div', null, `relay kind: ${data.relayKind || 'embedded'}`),
       h('div', null, `connected: ${String(data.connected)}`),
       h('div', null, `error: ${data.relayError || '(无)'}`),
       h('div', null, `device: ${data.deviceId}`),

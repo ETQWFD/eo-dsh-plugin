@@ -19,6 +19,7 @@ import { RelayClient } from './relay-client.js'
 import { EoStore } from './store.js'
 import { SessionBridge } from './bridge.js'
 import { registerHttpApi } from './http-api.js'
+import { startEmbeddedRelay } from './embedded-relay.js'
 
 export const name = 'eo-assistant'
 
@@ -96,6 +97,9 @@ export function apply(ctx, rawConfig = {}) {
     token: randomToken(),
     connected: false,
     relayError: '',
+    relayUrl: config.relayUrl,
+    relayKind: config.relayUrl ? 'external' : 'embedded',
+    relayReady: null,
     bind: null,
     conversations: new Map(loadConversations(conversationsFile).map((conv) => [conv.convId, conv])),
     settings: {
@@ -179,9 +183,53 @@ export function apply(ctx, rawConfig = {}) {
     log(`settings.configure skipped: ${error.message}`)
   }
 
+  let embedded = null
+  let relayReadyResolve
+  let relayReadyReject
+  state.relayReady = new Promise((resolve, reject) => {
+    relayReadyResolve = resolve
+    relayReadyReject = reject
+  })
+  // Avoid an unhandled rejection when the settings page never opens.
+  state.relayReady.catch(() => {})
+
   ctx.effect(() => {
-    relay.start()
-    return () => relay.stop()
+    let disposed = false
+    const boot = async () => {
+      if (!config.relayUrl) {
+        embedded = await startEmbeddedRelay({
+          dataDir,
+          publicDir: path.join(import.meta.dirname, '..', 'public'),
+          log,
+        })
+        if (disposed) {
+          await embedded.relay.close().catch(() => {})
+          return
+        }
+        config.relayUrl = embedded.url
+        state.relayUrl = embedded.url
+        state.relayKind = 'embedded'
+      } else {
+        state.relayUrl = config.relayUrl
+        state.relayKind = 'external'
+      }
+      relayReadyResolve?.(state.relayUrl)
+      relay.start()
+    }
+    boot().catch((error) => {
+      state.relayError = `无法启动 relay：${error.message}`
+      relayReadyReject?.(error)
+      log(state.relayError)
+    })
+    return () => {
+      disposed = true
+      relay.stop()
+      if (embedded) {
+        const current = embedded
+        embedded = null
+        current.relay.close().catch((error) => log(`close embedded relay failed: ${error.message}`))
+      }
+    }
   })
 
   // Wait for the host web server instead of reading ctx.webServer during
