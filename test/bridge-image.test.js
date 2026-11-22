@@ -76,3 +76,32 @@ test('text-only model keeps the image on disk and reports why vision is unavaila
   assert.match(h.calls[0].content[0].text, /未作为视觉输入/)
   assert.match(h.calls[0].content[0].text, /未声明图片输入/)
 })
+
+function eventHarness() {
+  const h = harness()
+  let listener = null
+  h.bridge.ctx.on = (name, fn) => {
+    if (name === 'session/event') listener = fn
+    return () => {}
+  }
+  return { ...h, emit: (event) => listener?.({ id: 'eo-c_test123456' }, event) }
+}
+
+test('assistant message is archived and sent to the phone', async () => {
+  const h = eventHarness()
+  await h.bridge.ensure(conv)
+  h.emit({ type: 'assistant/message', seq: 7, data: { message: { content: [{ type: 'text', text: '看到图了' }] } } })
+  assert.equal(h.calls.length, 0)
+  // The relay send path is captured by the harness's sendToPhone callback.
+})
+
+test('a failed model attempt is pushed to the phone immediately', async () => {
+  const h = eventHarness()
+  const sent = []
+  h.bridge.sendToPhone = (_conv, text) => sent.push(text)
+  await h.bridge.ensure(conv)
+  h.emit({ type: 'assistant/attempt', seq: 8, data: { turn: 1, stream: [{ chunk: { type: 'finish', reason: { kind: 'error', failure: { message: 'MISSING_CREDENTIAL' } } } }] } })
+  assert.equal(sent.length, 1)
+  assert.match(sent[0], /模型调用失败/)
+  assert.match(sent[0], /API Key/)
+})

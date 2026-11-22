@@ -175,6 +175,7 @@ export function EoConnectSection() {
   const statusRow = h('div', { style: { marginBottom: 12 } }, [
     badge(data.connected ? 'relay 在线' : 'relay 离线', data.connected ? 'ok' : 'bad'),
     badge(data.relayKind === 'embedded' ? '内置 relay' : '外部 relay', 'neutral'),
+    badge(data.model || '未配置模型', data.model ? 'neutral' : 'warn'),
     badge(conversationLength ? `${conversationLength} 个助手` : '未绑定', conversationLength ? 'ok' : 'neutral'),
     h('span', { style: { color: C.muted, fontSize: 12, fontFamily: C.mono } }, data.deviceId),
   ])
@@ -253,7 +254,7 @@ export function EoConnectSection() {
   } else if (!bind) {
     bindBody = h('div', null, [
       h('div', { style: { color: C.muted, marginBottom: 10, lineHeight: 1.7 } },
-        '点击生成二维码，用手机 EO助手 右上角“扫一扫”绑定这台电脑。手机和电脑在同一 Wi-Fi 下即可，无需填写 relay 地址；二维码 120 秒内有效。'),
+        '点击生成二维码，用手机 EO助手 右上角“扫一扫”绑定这台电脑。手机和电脑在同一 Wi-Fi 下即可，无需填写 relay 地址；二维码 120 秒内有效。手机消息会进入 DSH 会话；AI 回复依赖左侧 Models 里已配置的模型与 API Key。'),
       button(busy ? '生成中…' : '生成二维码', () => post('/bind/new'), { primary: true, disabled: busy }),
     ])
   } else if (bind.status === 'confirmed') {

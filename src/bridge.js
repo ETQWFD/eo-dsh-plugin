@@ -19,6 +19,7 @@ export class SessionBridge {
     this.downloadAttachment = downloadAttachment
     this.log = log
     this.entries = new Map()
+    this.failedTurns = new Set()
     this.disposed = false
   }
 
@@ -147,10 +148,40 @@ export class SessionBridge {
 
     if (!handle && !selection) {
       this.log('[eo] no default model selection; messages are archived and appended to the session without an agent reply')
+      this.notifyError(conv, '⚠️ 这台电脑的 DSH 还没有可用模型。\n\n请在电脑 DSH「设置 → 模型」登录或添加 API Key，然后重新发送。', `err_model_${conv.convId}`)
     }
 
     const off = this.ctx.on('session/event', (eventSession, event) => {
       if (eventSession?.id !== sessionId) return
+      if (event.type === 'assistant/attempt') {
+        const failure = (event.data?.stream || [])
+          .map((part) => part?.chunk?.reason?.failure)
+          .find(Boolean)
+        if (failure) {
+          const turn = String(event.data?.turn ?? 0)
+          const key = `${conv.convId}:${turn}`
+          if (!this.failedTurns.has(key)) {
+            this.failedTurns.add(key)
+            const detail = String(failure.message || failure.code || '未知错误').slice(0, 700)
+            this.notifyError(conv, `⚠️ 模型调用失败：${detail}\n\n请在电脑 DSH「设置 → 模型」登录或添加 API Key，检查模型与网络后重试。`, `err_turn_${turn}_${event.seq ?? 0}`)
+          }
+        }
+        return
+      }
+      if (event.type === 'turn/end') {
+        const reason = event.data?.reason
+        const turn = String(event.data?.turn ?? 0)
+        if (reason?.kind === 'error') {
+          const key = `${conv.convId}:${turn}`
+          if (!this.failedTurns.has(key)) {
+            this.failedTurns.add(key)
+            const detail = String(reason.error?.message || reason.error || '未知错误').slice(0, 700)
+            this.notifyError(conv, `⚠️ 模型调用失败：${detail}\n\n请在电脑 DSH「设置 → 模型」登录或添加 API Key，确认模型可用后再发送。`, `err_${turn}_${event.seq ?? 0}`)
+          }
+        }
+        this.failedTurns.delete(`${conv.convId}:${turn}`)
+        return
+      }
       if (event.type !== 'assistant/message') return
       const content = event.data?.message?.content
       if (!Array.isArray(content)) return
@@ -160,26 +191,43 @@ export class SessionBridge {
         .join('')
         .trim()
       if (!text) return
-      const record = {
-        msgId: `a_${event.seq ?? 0}`,
-        seq: Number(event.seq ?? 0),
-        sender: 'assistant',
-        kind: 'text',
-        ts: Date.now(),
-        text,
-      }
-      try { this.store.append(conv.convId, record) } catch (error) {
-        this.log(`[eo] archive assistant message failed: ${error.message}`)
-      }
-      conv.lastMessageAt = record.ts
-      try { this.sendToPhone(conv, text) } catch (error) {
-        this.log(`[eo] send assistant message failed: ${error.message}`)
-      }
+      this.pushAssistant(conv, text, `a_${event.seq ?? 0}`, Number(event.seq ?? 0))
     })
 
     const entry = { conv, session, handle, off }
     this.entries.set(conv.convId, entry)
+    // If no Agent could be attached (missing model/credentials), do not
+    // permanently cache a dead entry: the user may add a model later, and the
+    // next phone message should retry instead of silently archiving forever.
+    if (!handle) {
+      try { off() } catch { /* ignore */ }
+      this.entries.delete(conv.convId)
+    }
     return entry
+  }
+
+  notifyError(conv, text, msgId = `err_${Date.now()}`) {
+    this.log(`[eo] ${text.split('\n')[0]}`)
+    this.pushAssistant(conv, text, msgId, 0, true)
+  }
+
+  pushAssistant(conv, text, msgId, seq, isError = false) {
+    const record = {
+      msgId,
+      seq,
+      sender: 'assistant',
+      kind: 'text',
+      ts: Date.now(),
+      text,
+      ...(isError ? { error: true } : {}),
+    }
+    try { this.store.append(conv.convId, record) } catch (error) {
+      this.log(`[eo] archive assistant message failed: ${error.message}`)
+    }
+    conv.lastMessageAt = record.ts
+    try { this.sendToPhone(conv, text) } catch (error) {
+      this.log(`[eo] send assistant message failed: ${error.message}`)
+    }
   }
 
   async deliver(conv, payload) {
@@ -257,6 +305,7 @@ export class SessionBridge {
         entry.handle.agent.followup({ content, source: { kind: 'eo' } })
       } catch (error) {
         this.log(`[eo] agent followup failed: ${error.message}`)
+        this.notifyError(conv, `⚠️ 无法启动模型：${error.message}`, `err_followup_${payload.msgId}`)
       }
       return
     }

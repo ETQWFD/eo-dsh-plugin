@@ -118,6 +118,14 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
   state.persist = persist
+  state.getModel = () => {
+    try {
+      const selection = ctx.get('agentDefaultModel')?.currentSelection?.()
+      return selection?.provider && selection?.model ? `${selection.provider}/${selection.model}` : ''
+    } catch {
+      return ''
+    }
+  }
   persist()
 
   let bridge

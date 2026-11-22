@@ -93,6 +93,7 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
     ok: true,
     token: state.token,
     assistantName: state.settings.assistantName,
+    model: typeof state.getModel === 'function' ? state.getModel() : '',
     relayUrl: state.relayUrl || config.relayUrl,
     relayKind: state.relayKind || (config.relayUrl ? 'external' : 'embedded'),
     connected: state.connected,
