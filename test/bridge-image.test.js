@@ -63,6 +63,7 @@ test('image payload is admitted and becomes a real image content block', async (
   assert.equal(h.calls.length, 1)
   assert.equal(h.calls[0].content[0].type, 'text')
   assert.match(h.calls[0].content[0].text, /已作为视觉输入/)
+  assert.equal(h.calls[0].role, 'user')
   assert.equal(h.calls[0].content[1].type, 'image')
   assert.equal(h.calls[0].content[1].attachment.attachmentId, 'sha256:test')
 })

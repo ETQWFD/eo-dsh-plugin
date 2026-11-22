@@ -41,6 +41,17 @@ dsh plugin --profile <profile> add github:ETQWFD/eo-dsh-plugin
 
 安装后在对应 profile 的 DSH Web 设置页即可看到“EO助手连接”。如果桌面版从旧版本升级，先重启应用，让插件重新加载。
 
+### 模型与 API Key（必读）
+
+手机只负责输入和“眼睛”，AI 回复由电脑上的 DSH 模型产生。插件不会在手机里保存 Key，也不会替你登录模型。
+
+1. 打开 DSH `设置 → 模型`，登录 DeepSeek 或添加 `DEEPSEEK_API_KEY`；
+2. 确认可用模型已选中（例如 `deepseek-official/deepseek-flash`）；
+3. 回到 `设置 → EO助手连接`，状态栏会显示当前模型；显示“未配置模型”时手机只能发消息，不会有 AI 回复；
+4. 手机发送后，若模型调用失败，插件会把真实失败原因实时推回手机，并在下面提示去电脑配置模型或网络，不会只显示“已发送”而没有结果。
+
+图片要求所选模型声明支持图片输入；`deepseek-flash` 支持。插件把图片作为 `role: "user"` 消息里的原生 image 内容块送入 DSH，模型可以直接看图。
+
 ### 手机
 
 - Android：安装 Release 里的 `eo-assistant-0.3.0.apk`。首次打开就是内置扫码页，扫桌面二维码后自动进入聊天，不再手填地址。

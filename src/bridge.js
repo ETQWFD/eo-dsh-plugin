@@ -302,7 +302,7 @@ export class SessionBridge {
       : [{ type: 'text', text }]
     if (entry.handle?.agent?.followup) {
       try {
-        entry.handle.agent.followup({ content, source: { kind: 'eo' } })
+        entry.handle.agent.followup({ role: 'user', content, source: { kind: 'eo' } })
       } catch (error) {
         this.log(`[eo] agent followup failed: ${error.message}`)
         this.notifyError(conv, `⚠️ 无法启动模型：${error.message}`, `err_followup_${payload.msgId}`)
