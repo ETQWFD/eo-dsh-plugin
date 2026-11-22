@@ -1,0 +1,55 @@
+{
+  "name": "dsh-eo-assistant",
+  "version": "0.1.0",
+  "description": "EO Assistant connection plugin for DeepSeek Harness: QR bind, E2EE chat bridge, and eo/ workspace archive.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.2 <0.3.0"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "files": [
+    "src",
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:client": "node scripts/build-client.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "eo-assistant",
+    "e2ee",
+    "qr"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
