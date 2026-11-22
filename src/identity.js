@@ -106,15 +106,20 @@ export class DeviceIdentity {
   }
 
   decrypt(key, nonce, ct, aad) {
+    return Buffer.from(this.decryptBytes(key, nonce, ct, aad)).toString('utf8')
+  }
+
+  /** Binary variant used for file/voice blobs. */
+  decryptBytes(key, nonce, ct, aad) {
     const iv = fromBase64url(nonce)
-    const payload = fromBase64url(ct)
+    const payload = Buffer.isBuffer(ct) ? ct : fromBase64url(ct)
     if (iv.length !== IV_BYTES || payload.length < TAG_BYTES) throw new Error('invalid ciphertext')
     const body = payload.subarray(0, payload.length - TAG_BYTES)
     const tag = payload.subarray(payload.length - TAG_BYTES)
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
     decipher.setAAD(Buffer.from(aad, 'utf8'))
     decipher.setAuthTag(tag)
-    return Buffer.concat([decipher.update(body), decipher.final()]).toString('utf8')
+    return Buffer.concat([decipher.update(body), decipher.final()])
   }
 
   toJSON() {

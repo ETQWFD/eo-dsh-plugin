@@ -117,6 +117,16 @@ export function apply(ctx, rawConfig = {}) {
   persist()
 
   let bridge
+  const profilePayload = () => {
+    let iconBase64 = ''
+    try {
+      const file = store.iconFile()
+      if (fs.existsSync(file)) iconBase64 = fs.readFileSync(file).toString('base64')
+    } catch (error) {
+      log(`read icon failed: ${error.message}`)
+    }
+    return { name: state.settings.assistantName, iconBase64 }
+  }
   const relay = new RelayClient({
     config,
     identity,
@@ -124,14 +134,19 @@ export function apply(ctx, rawConfig = {}) {
     log,
     handlers: {
       onStatus: (connected, error) => {
-        if (connected) log(`relay connected as ${identity.deviceId}`)
-        else if (error) log(`relay status: ${error}`)
+        if (connected) {
+          log(`relay connected as ${identity.deviceId}`)
+          relay.publishProfile(profilePayload()).catch((publishError) => {
+            log(`publish profile failed: ${publishError.message}`)
+          })
+        } else if (error) log(`relay status: ${error}`)
       },
       onBindClaimed: (bind) => log(`bind ${bind.bindId} claimed; confirmation code shown in settings`),
       onBindConfirmed: (conv) => {
         state.conversations.set(conv.convId, conv)
         try { store.ensureConversation(conv) } catch (error) { log(`ensure eo folder failed: ${error.message}`) }
         persist()
+        relay.publishProfile(profilePayload()).catch((error) => log(`publish profile failed: ${error.message}`))
         log(`binding confirmed: ${conv.convId} (${conv.peerDeviceId})`)
         bridge.ensure(conv).catch((error) => log(`session bridge setup failed: ${error.message}`))
       },
@@ -152,6 +167,7 @@ export function apply(ctx, rawConfig = {}) {
     store,
     state,
     log,
+    downloadAttachment: (conv, meta) => relay.downloadAttachment(conv, meta, config.maxFileMB * 1024 * 1024),
     sendToPhone: (conv, text) => relay.sendText(conv, text),
   })
 

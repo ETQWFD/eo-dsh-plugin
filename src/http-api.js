@@ -78,6 +78,17 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
     disposers.push(web.register({ kind, path, handler }))
   }
 
+  const publishProfile = () => {
+    let iconBase64 = ''
+    try {
+      if (fs.existsSync(store.iconFile())) iconBase64 = fs.readFileSync(store.iconFile()).toString('base64')
+    } catch { /* icon is optional */ }
+    relay.publishProfile({
+      name: state.settings.assistantName,
+      iconBase64,
+    }).catch((error) => log(`publish profile failed: ${error.message}`))
+  }
+
   const snapshot = () => ({
     ok: true,
     token: state.token,
@@ -150,6 +161,7 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
         if (!name) return sendJson(res, 400, { error: '助手名称不能为空' })
         state.settings.assistantName = name
         store.writeSettings(state.settings)
+        publishProfile()
       }
       sendJson(res, 200, { ok: true, assistantName: state.settings.assistantName })
     } catch (error) {
@@ -176,6 +188,7 @@ export function registerHttpApi({ web, state, config, relay, store, identity, lo
         state.settings.iconType = isPng ? 'image/png' : 'image/jpeg'
         state.settings.iconVersion = Date.now()
         store.writeSettings(state.settings)
+        publishProfile()
         return sendJson(res, 200, { ok: true, iconVersion: state.settings.iconVersion })
       } catch (error) {
         return sendJson(res, 400, { error: error.message })

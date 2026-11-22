@@ -10,6 +10,7 @@
  *   GET  /v1/history               encrypted backlog after seq
  *   WS   /v1/ws                    signed query, presence + push
  */
+import crypto from 'node:crypto'
 import { base64url, canonicalEnvelope, envelopeAad, fromBase64url, nowMs, randomId, sha256hex, toHttpUrl, toWsUrl } from './protocol.js'
 import { verifyEd25519 } from './identity.js'
 import { buildBindPayload, makeQrDataUrl } from './qr.js'
@@ -66,29 +67,82 @@ export class RelayClient {
   }
 
   async request(method, pathname, bodyObject) {
-    const url = new URL(pathname, this.httpBase())
     const body = bodyObject === undefined ? '' : JSON.stringify(bodyObject)
+    return this.requestRaw(method, pathname, body ? Buffer.from(body) : Buffer.alloc(0), true)
+  }
+
+  /**
+   * Signed request with an arbitrary body. Used by the binary blob endpoints;
+   * the signature covers sha256(raw bytes), not JSON.stringify().
+   */
+  async requestRaw(method, pathname, bodyBuffer, json = false) {
+    const url = new URL(pathname, this.httpBase())
+    const body = bodyBuffer ?? Buffer.alloc(0)
     const ts = String(nowMs())
     const canonical = `${method}\n${url.pathname}\n${ts}\n${sha256hex(body)}`
     const sig = base64url(this.identity.sign(canonical))
     const res = await fetch(url, {
       method,
       headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
+        accept: json ? 'application/json' : 'application/octet-stream',
+        'content-type': json ? 'application/json' : 'application/octet-stream',
         'x-eo-device': this.identity.deviceId,
         'x-eo-ts': ts,
         'x-eo-sig': sig,
         'x-eo-ed': base64url(this.identity.edPublicRaw),
         'x-eo-x': base64url(this.identity.xPublicRaw),
       },
-      body: body || undefined,
+      body: body.length ? body : undefined,
     })
-    const text = await res.text()
-    let data = {}
-    try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
-    if (!res.ok) throw new Error(data.error || `relay HTTP ${res.status}`)
-    return data
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      let data = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
+      throw new Error(data.error || `relay HTTP ${res.status}`)
+    }
+    if (json) {
+      const text = await res.text()
+      let data = {}
+      try { data = text ? JSON.parse(text) : {} } catch { data = { error: text.slice(0, 200) } }
+      return data
+    }
+    return Buffer.from(await res.arrayBuffer())
+  }
+
+  async publishProfile({ name, iconBase64 = '' }) {
+    if (!this.config.relayUrl) return null
+    return this.request('POST', '/v1/profile', {
+      name,
+      iconBase64: iconBase64 || undefined,
+    })
+  }
+
+  async uploadBlob(conv, blobId, ciphertext) {
+    const query = new URLSearchParams({ convId: conv.convId })
+    return this.requestRaw('PUT', `/v1/blob/${encodeURIComponent(blobId)}?${query.toString()}`, ciphertext)
+  }
+
+  async downloadBlob(conv, blobId) {
+    const query = new URLSearchParams({ convId: conv.convId })
+    return this.requestRaw('GET', `/v1/blob/${encodeURIComponent(blobId)}?${query.toString()}`, Buffer.alloc(0))
+  }
+
+  /**
+   * Fetch, decrypt and integrity-check a phone attachment. The blob is
+   * ciphertext at rest on the relay; meta travels inside the signed envelope.
+   */
+  async downloadAttachment(conv, meta, maxBytes = 16 * 1024 * 1024) {
+    if (!meta?.blobId || !meta?.blobNonce || !meta?.blobAad) throw new Error('attachment metadata incomplete')
+    if (Number(meta.size) > maxBytes) throw new Error('attachment exceeds configured size limit')
+    const ciphertext = await this.downloadBlob(conv, meta.blobId)
+    if (ciphertext.length > maxBytes + 32) throw new Error('attachment exceeds configured size limit')
+    const plain = this.identity.decryptBytes(conv.key, meta.blobNonce, ciphertext, meta.blobAad)
+    if (Number(meta.size) && plain.length !== Number(meta.size)) throw new Error('attachment size mismatch')
+    if (meta.sha256) {
+      const digest = crypto.createHash('sha256').update(plain).digest('hex')
+      if (digest !== meta.sha256) throw new Error('attachment checksum mismatch')
+    }
+    return plain
   }
 
   async createBind() {
@@ -304,13 +358,21 @@ export class RelayClient {
   }
 
   sendText(conv, text) {
-    const payload = JSON.stringify({ text, meta: null })
+    return this.sendPayload(conv, {
+      kind: 'text',
+      text,
+      meta: null,
+    })
+  }
+
+  sendPayload(conv, { kind = 'text', text = '', meta = null }) {
+    const payload = JSON.stringify({ text, meta })
     const envelope = {
       v: 1,
       convId: conv.convId,
       msgId: randomId('m'),
       seq: (conv.seq || 0) + 1,
-      kind: 'text',
+      kind,
       sender: this.identity.deviceId,
       ts: nowMs(),
       nonce: '',
@@ -331,7 +393,7 @@ export class RelayClient {
       sender: envelope.sender,
       ts: envelope.ts,
       text,
-      meta: null,
+      meta,
     })
     return envelope
   }

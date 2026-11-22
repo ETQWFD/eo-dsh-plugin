@@ -1,7 +1,7 @@
 {
   "name": "dsh-eo-assistant",
-  "version": "0.1.0",
-  "description": "EO Assistant connection plugin for DeepSeek Harness: QR bind, E2EE chat bridge, and eo/ workspace archive.",
+  "version": "0.2.0",
+  "description": "EO Assistant connection plugin for DeepSeek Harness: QR bind, E2EE text/file/voice/PPT bridge, profile sync, and eo/ workspace archive.",
   "type": "module",
   "main": "src/index.js",
   "exports": {

@@ -10,12 +10,13 @@
  * DSH's own lifetime management owns that decision.
  */
 export class SessionBridge {
-  constructor({ ctx, config, store, state, sendToPhone, log = console.log }) {
+  constructor({ ctx, config, store, state, sendToPhone, downloadAttachment, log = console.log }) {
     this.ctx = ctx
     this.config = config
     this.store = store
     this.state = state
     this.sendToPhone = sendToPhone
+    this.downloadAttachment = downloadAttachment
     this.log = log
     this.entries = new Map()
     this.disposed = false
@@ -129,6 +130,41 @@ export class SessionBridge {
   }
 
   async deliver(conv, payload) {
+    let meta = payload.meta && typeof payload.meta === 'object' ? { ...payload.meta } : null
+    let attachmentPath = ''
+    let attachmentError = ''
+    if (meta?.blobId) {
+      try {
+        if (typeof this.downloadAttachment !== 'function') throw new Error('attachment transport unavailable')
+        const bytes = await this.downloadAttachment(conv, meta)
+        attachmentPath = this.store.saveAttachment(
+          conv.convId,
+          payload.msgId,
+          meta.name || (payload.kind === 'voice' ? 'voice.webm' : 'attachment'),
+          bytes,
+        )
+        meta.localPath = attachmentPath
+        meta.bytes = bytes.length
+      } catch (error) {
+        attachmentError = error.message || String(error)
+        this.log(`[eo] attachment download failed: ${attachmentError}`)
+      }
+    }
+
+    const label = payload.kind === 'voice' ? '语音' : payload.kind === 'ppt' ? 'PPT' : '文件'
+    let text = payload.text || ''
+    if (meta?.blobId) {
+      const size = Number(meta.size || meta.bytes || 0)
+      const sizeText = size > 0 ? `，${(size / 1024).toFixed(1)}KB` : ''
+      const place = attachmentPath
+        ? `已保存到 ${attachmentPath}`
+        : `未能下载（${attachmentError || '未知错误'}），blobId=${meta.blobId}`
+      text = [
+        text,
+        `[${label}] ${meta.name || '未命名'}${sizeText}；${place}`,
+      ].filter(Boolean).join('\n')
+    }
+
     const record = {
       msgId: payload.msgId,
       seq: payload.seq,
@@ -136,7 +172,7 @@ export class SessionBridge {
       kind: payload.kind || 'text',
       ts: payload.ts || Date.now(),
       text: payload.text || '',
-      meta: payload.meta ?? null,
+      meta,
     }
     try { this.store.append(conv.convId, record) } catch (error) {
       this.log(`[eo] archive phone message failed: ${error.message}`)
@@ -146,7 +182,7 @@ export class SessionBridge {
     const entry = await this.ensure(conv)
     if (!entry) return
 
-    const content = [{ type: 'text', text: record.text }]
+    const content = [{ type: 'text', text }]
     if (entry.handle?.agent?.followup) {
       try {
         entry.handle.agent.followup({ content, source: { kind: 'eo' } })
